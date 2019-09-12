@@ -1,0 +1,10 @@
+{
+  "sweettracker": {
+    "baseurl": "http://info.sweettracker.co.kr",
+    "apikey": "HfXrb1XltA2xzisaBQzMbg"
+  },
+  "crawlerAccount": {
+    "username": "ansrl_dev",
+    "password": "!Smk3171528"
+  }
+}

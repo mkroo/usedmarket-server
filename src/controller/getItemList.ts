@@ -1,10 +1,11 @@
 import { Request, Response } from 'express';
 import Crawler from '../util/Crawler';
-import { username, password } from '../../accountConfig.json';
+import { crawlerAccount } from '../../config.json';
 
 const getItemList = async (req: Request, res: Response) => {
   const { keyword } = req.params;
   const { limit, offset } = req.query;
+  const { username, password } = crawlerAccount;
 
   const crawler = new Crawler();
   await crawler.init();
