@@ -10,7 +10,9 @@ const getItemList = async (req: Request, res: Response) => {
   const crawler = new Crawler();
   await crawler.init();
   await crawler.login(username, password);
+  console.time('run');
   const posts = await crawler.run(keyword);
+  console.timeEnd('run');
 
   return res.json({ posts });
 };

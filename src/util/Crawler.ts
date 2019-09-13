@@ -1,7 +1,8 @@
 import puppeteer from 'puppeteer';
 import axios, { AxiosRequestConfig } from 'axios';
-import * as qs from 'querystring';
+import querystring from 'querystring';
 import cheerio from 'cheerio';
+import qs from 'qs';
 
 export interface Post {
   title: string;
@@ -11,10 +12,20 @@ export interface Post {
   soldOut: boolean;
 }
 
+export interface SearchOption {
+  include: string;
+  exclude: string;
+  sortBy: string;
+  searchBy: number;
+  page: number;
+}
+
 export default class Crawler {
-  private cookiesObject: puppeteer.Cookie[];
   private browser: puppeteer.Browser;
   private page: puppeteer.Page;
+
+  private NID_AUT: string; // 네이버 로그인 쿠키 value
+  private NID_SES: string; // 네이버 로그인 쿠키 value
 
   constructor() {
     console.log('crwaler start!');
@@ -36,59 +47,71 @@ export default class Crawler {
     );
     await this.page.click('#frmNIDLogin > fieldset > input');
     await this.page.waitForNavigation();
-    this.cookiesObject = await this.page.cookies();
+    const cookies = await this.page.cookies();
+
+    this.NID_AUT = cookies.filter(cookie => cookie.name === 'NID_AUT')[0].value;
+    this.NID_SES = cookies.filter(cookie => cookie.name === 'NID_SES')[0].value;
   }
 
   public async run(keyword: string) {
     const posts: Post[] = [];
     const postUrls = await this.getPostList(keyword);
     for (const url of postUrls) {
-      const post = await this.getPostWithPuppeteer(url);
+      const post = await this.getPost(url);
       posts.push(post);
     }
     await this.browser.close();
     return posts;
   }
 
-  private async getPostList(keyword: string) {
-    const query = qs.escape(keyword);
-    const url = `https://m.cafe.naver.com/ArticleSearchList.nhn?search.query=${query}&search.searchBy=1&search.sortBy=date&search.clubid=10050146&search.option=0`;
-    const res = await axios.get(url);
+  private async getPostList(keyword: string, option?: SearchOption) {
+    const url = 'https://m.cafe.naver.com/ArticleSearchList.nhn';
+    const config: AxiosRequestConfig = {
+      params: {
+        search: {
+          clubid: 10050146,
+          include: option ? option.include : '',
+          exclude: option ? option.exclude : '',
+          sortBy: (option && option.sortBy) ? option.sortBy : 'date',
+          searchBy: (option && option.searchBy) ? option.searchBy : 1, // 0: 제목 + 내용, 1: 제목
+          query: querystring.escape(keyword),
+          page: (option && option.page) ? option.page : 1,
+        },
+      },
+      paramsSerializer: params => qs.stringify(params, { encode: false, allowDots: true }),
+    };
+    const res = await axios.get(url, config);
     const $ = cheerio.load(res.data);
     const list = $('#articleList > ul > li').get();
     const baseURL = 'https://m.cafe.naver.com';
     return list.map(post => baseURL.concat($(post).children('a').attr('href')));
   }
 
-  private async getPostWithPuppeteer(url: string) {
-    await this.page.goto(url, { waitUntil: 'networkidle2' });
-    const element = await this.page.$('.product_name');
-    const { title, price } = await this.page.evaluate(
-      (element: HTMLElement) => {
-        const text = element.textContent.split('\n');
-        const title = text[2].trim();
-        const price = Number(text[3].trim().replace(/[,원]/gi, ''));
-        return { title, price };
-      },
-      element,
-    );
-    return { title, price, url, createdAt: new Date(), soldOut: false }; // createdAt, soldOut 추가해야함
-  }
-
-  private async getPostWithAxios(url: string) {
+  private async getPost(url: string) {
     const config: AxiosRequestConfig = {
       headers: {
-        Cookie: this.cookiesObject.map(cookie => `${cookie.name}: ${cookie.value};`).join(' '),
+        Cookie: `NID_AUT=${this.NID_AUT}; NID_SES=${this.NID_SES};`,
       },
       withCredentials: true,
     };
     try {
+      console.time('axios');
       const res = await axios.get(url, config);
+      console.timeEnd('axios');
+      console.time('cheerio load');
       const $ = cheerio.load(res.data);
-      const title = $('title').text();
-      console.log(title);
+      console.timeEnd('cheerio load');
+      console.time('parse');
+      const post = $('.post');
+      const soldOut = post.children('strong.sale').attr('class').includes('sold_out');
+      const text = post.children('.product_name').text().split('\n');
+      const title = text[2].trim();
+      const price = Number(text[3].trim().replace(/[,원]/gi, ''));
+      const createdAt = new Date(post.children('.post_info .board_time span:first-child').text());
+      console.timeEnd('parse');
+      return { title, price, url, createdAt, soldOut };
     } catch (err) {
-      console.log('!');
+      console.log(err);
     }
   }
 }

@@ -3,10 +3,6 @@ import cheerio from 'cheerio';
 import { Cookie } from 'tough-cookie';
 import * as qs from 'querystring';
 
-interface Test {
-  r: string;
-}
-
 module CJLogitics {
   const getCSRF = async () => {
     const url = 'https://www.cjlogistics.com/ko/tool/parcel/tracking';
